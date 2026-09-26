@@ -142,6 +142,7 @@ export function FinancialMap({ collection, onSelectCompany }: { collection: stri
   const [aggregation, setAggregation] = useState('sum');
   const [pkd, setPkd] = useState('');
   const [pkdMode, setPkdMode] = useState<'primary' | 'all'>('primary');
+  const [verification, setVerification] = useState<'all' | 'verified' | 'confirmed' | 'rejected' | 'unverified'>('all');
   const [minCompanies, setMinCompanies] = useState(5);
   const [view, setView] = useState<'value' | 'change'>('value');
   const [scaleMethod, setScaleMethod] = useState<'quantile' | 'percentile' | 'minmax' | 'manual'>('quantile');
@@ -176,17 +177,17 @@ export function FinancialMap({ collection, onSelectCompany }: { collection: stri
     if (!year || !activeMetadata) return null;
     const params = new URLSearchParams({
       collection, level, year: String(year), metric: metricId, aggregation,
-      pkd, pkd_mode: pkdMode, min_companies: String(minCompanies), view,
+      pkd, pkd_mode: pkdMode, verification, min_companies: String(minCompanies), view,
     });
     if (view === 'change') params.set('compare_year', String(year - 1));
     return `/api/analytics/map?${params}`;
-  }, [collection, activeMetadata, level, year, metricId, aggregation, pkd, pkdMode, minCompanies, view]);
+  }, [collection, activeMetadata, level, year, metricId, aggregation, pkd, pkdMode, verification, minCompanies, view]);
   const map = useApi<MapData>(query);
 
   const detailQuery = selectedRegion && year && activeMetadata ? (() => {
     const params = new URLSearchParams({
       collection, level, year: String(year), metric: metricId, aggregation, pkd, pkd_mode: pkdMode,
-      min_companies: String(minCompanies),
+      verification, min_companies: String(minCompanies),
     });
     return `/api/analytics/map/regions/${selectedRegion}?${params}`;
   })() : null;
@@ -196,14 +197,14 @@ export function FinancialMap({ collection, onSelectCompany }: { collection: stri
     if (!year || !compare.length || !activeMetadata) return null;
     const params = new URLSearchParams({
       collection, region_ids: compare.join(','), level, year: String(year), pkd, pkd_mode: pkdMode,
-      min_companies: String(minCompanies),
+      verification, min_companies: String(minCompanies),
     });
     return `/api/analytics/map/compare/regions?${params}`;
-  }, [collection, activeMetadata, compare, level, year, pkd, pkdMode, minCompanies]);
+  }, [collection, activeMetadata, compare, level, year, pkd, pkdMode, verification, minCompanies]);
   const comparison = useApi<ComparisonData>(comparisonQuery);
 
   useEffect(() => { setSelectedRegion(''); setSearch(''); setCompare([]); }, [collection, level]);
-  useEffect(() => { setSelectedRegion(''); }, [year, metricId, aggregation, pkd, pkdMode, view]);
+  useEffect(() => { setSelectedRegion(''); }, [year, metricId, aggregation, pkd, pkdMode, verification, view]);
 
   useEffect(() => {
     function receive(event: MessageEvent) {
@@ -290,6 +291,13 @@ export function FinancialMap({ collection, onSelectCompany }: { collection: stri
       <label>Zakres PKD<select value={pkdMode} onChange={event => setPkdMode(event.target.value as 'primary' | 'all')}>
         <option value="primary">Tylko główne PKD</option><option value="all">Główne + dodatkowe</option>
       </select></label>
+      <label>Weryfikacja<select value={verification} onChange={event => setVerification(event.target.value as typeof verification)}>
+        <option value="all">Wszystkie firmy</option>
+        <option value="verified">Wszystkie zweryfikowane</option>
+        <option value="confirmed">Potwierdzone jako deweloper</option>
+        <option value="rejected">Wykluczone — nie deweloper</option>
+        <option value="unverified">Jeszcze niezweryfikowane</option>
+      </select></label>
       <label>Minimum firm<select value={minCompanies} onChange={event => setMinCompanies(Number(event.target.value))}>
         {[1, 3, 5, 10, 20, 50].map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
@@ -359,6 +367,6 @@ export function FinancialMap({ collection, onSelectCompany }: { collection: stri
 
     {compare.length > 0 && <section className="atlas-comparison"><div className="comparison-heading"><div><h2>Porównanie regionów</h2><p>Maksymalnie pięć regionów · ten sam rok, branża i zakres PKD.</p></div><button onClick={() => setCompare([])}>Wyczyść</button></div>{comparison.loading && <p className="detail-loading">Liczymy wspólne wskaźniki…</p>}{comparison.error && <p className="detail-loading">Nie udało się pobrać porównania: {comparison.error}</p>}{compareRegions.length > 0 && <div className="table-scroll"><table><thead><tr><th>Region</th><th>Przychody</th><th>Zysk netto</th><th>ROA</th><th>ROE</th><th>Marża EBIT</th><th /></tr></thead><tbody>{compareRegions.map(region => <tr key={region.region_id}><td><strong>{region.region_name}</strong></td>{['revenue_total', 'profit_net', 'roa', 'roe', 'ebit_margin'].map(metric => <td key={metric} title={`${region.metrics[metric]?.company_count || 0} firm z danymi`}>{region.metrics[metric]?.formatted_value || '—'}</td>)}<td><button onClick={() => toggleCompare(region.region_id)} aria-label={`Usuń ${region.region_name}`}>×</button></td></tr>)}</tbody></table></div>}</section>}
 
-    <p className="atlas-method-note">Wartości pochodzą z zaimportowanych sprawozdań. Zero jest liczbą; brak danych nie jest zamieniany na zero. Dla wskaźników procentowych „wskaźnik zagregowany” liczy iloraz sum składowych, a nie średnią procentów.</p>
+    <p className="atlas-method-note">Wartości pochodzą z zaimportowanych sprawozdań. Filtr weryfikacji korzysta z decyzji ręcznych i Gemini zapisanych w bazie, więc mapa przelicza się po każdej zmianie etykiety. Zero jest liczbą; brak danych nie jest zamieniany na zero. Dla wskaźników procentowych „wskaźnik zagregowany” liczy iloraz sum składowych, a nie średnią procentów.</p>
   </div>;
 }

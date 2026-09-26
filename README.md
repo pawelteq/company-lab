@@ -5,6 +5,7 @@ Aplikacja do przeglądania firm, ich finansów i powiązań oraz badania zależn
 ## Funkcje
 
 - Katalog firm z wyszukiwaniem i filtrami.
+- Ręczna i automatyczna weryfikacja firm z filtrem: zweryfikowane, potwierdzone, odrzucone lub niezweryfikowane.
 - Finanse, wykresy, historia sprawozdań i powiązania osób.
 - Finansowa mapa Polski z agregacją dla województw, powiatów i gmin, filtrem PKD, rankingiem i porównaniem regionów.
 - Słowniczek oraz wnioski z badań opisane prostym językiem.
@@ -39,6 +40,8 @@ Na drugim komputerze:
 3. Po zakończeniu kliknij `URUCHOM_STRONE.bat`.
 
 Paczka zawiera obie bazy aplikacji, pełne opisy profili, kwalifikacje firm i podgrupy, zapisane weryfikacje ręczne/AI, dane mapy, gotowe raporty widoczne w zakładkach badań oraz historię i pliki pomocnicze analiz. Import sprawdza integralność i sumy kontrolne paczki. Jeśli na komputerze były już dane, zapisuje ich kopię w `.local/backups` przed podmianą. Gotowe raporty są od razu kopiowane również do zbudowanej strony, więc nie trzeba ponownie wykonywać wielogodzinnych obliczeń. Obsługiwane są także ZIP-y z surowym katalogiem `profiles`, które zostaną automatycznie przetworzone. Nie wysyłaj danych osobom bez uprawnień do ich używania.
+
+Zmiana etykiety firmy jest od razu zapisywana w lokalnej bazie. Katalog, liczniki, eksport CSV i mapa korzystają z niej przy następnym odświeżeniu danych. Eksport ZIP przenosi te decyzje na drugi komputer. Gotowe raporty badawcze w ZIP-ie pozostają niezmienionym wynikiem poprzedniego uruchomienia; po ponownym uruchomieniu badania jego dobór próby uwzględni zapisane decyzje ręczne i Gemini.
 
 ## Ręczne uruchomienie na Windows
 

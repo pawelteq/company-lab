@@ -5,13 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 from statsmodels.stats.multitest import multipletests
-from backend.local_profiles import connect, decompress_json
+from backend.local_profiles import connect, decompress_json, apply_verification_override
 from etl.config import ROOT
 from etl.business_classification import VERSION, RULES
 from research.leverage_study import build, estimate
 
 PROTOCOL = {'version':'segmented-point-lags-v1','classification_version':VERSION,'minimum_years':3,
-    'selection':'All classified active developers/SPV/contractors with ≥3 complete annual standalone PLN periods; no minimum revenue. Unresolved and unknown activity excluded.',
+    'selection':'Saved human/Gemini decisions override automatic labels. Otherwise all classified active developers/SPV/contractors with ≥3 complete annual standalone PLN periods; no minimum revenue. Unresolved and unknown activity excluded.',
     'periods':'Full calendar years; positive assets; profit, revenue, equity and liabilities observed; balance within 2%; conflicting duplicate years excluded.',
     'outcomes':'ROA = profit / average assets(t-1,t); ROE = profit / average equity(t-1,t), only positive equity in both years.',
     'exposures':['liabilities_assets','debt_equity'],
@@ -25,8 +25,11 @@ def run():
     with connect() as conn:
         collection=conn.execute('SELECT id FROM profile_collection ORDER BY created_at DESC LIMIT 1').fetchone()[0]
         def profiles():
-            for r in conn.execute('SELECT profile_json_zlib,classification_json FROM profile_screening WHERE collection_id=? ORDER BY krs',(collection,)):
-                p=decompress_json(r[0]); p['classification']=json.loads(r[1]); yield p
+            for r in conn.execute('''SELECT p.profile_json_zlib,p.classification_json,v.status verification_status
+                FROM profile_screening p LEFT JOIN company_verification v ON v.krs=p.krs
+                WHERE p.collection_id=? ORDER BY p.krs''',(collection,)):
+                classification=json.loads(r['classification_json']) if r['classification_json'] else {}
+                yield apply_verification_override(decompress_json(r['profile_json_zlib']),r['verification_status'],classification)
         frame,selected,audit,exclusions,coverage=build(profiles(),expanded=True,minimum_years=3)
     frame['debt_equity']=frame.debt/frame.equity.where(frame.equity>0)
     models=[]; panels=[]

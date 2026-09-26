@@ -129,6 +129,38 @@ def decompress_json(blob: bytes) -> dict:
     return simplejson.loads(zlib.decompress(blob), use_decimal=True)
 
 
+def apply_verification_override(
+    profile: dict,
+    verification_status: str | None,
+    classification: dict | None = None,
+) -> dict:
+    """Apply the saved human/Gemini decision as the highest-priority label."""
+    if classification is not None:
+        profile["classification"] = classification
+    profile["verification_status"] = verification_status
+    if verification_status not in ("confirmed", "rejected"):
+        return profile
+    screening = dict(profile.get("screening") or {})
+    current_classification = dict(profile.get("classification") or {})
+    if verification_status == "confirmed":
+        screening.update(status="developer_candidate", verified=True)
+        current_classification.update(
+            business_type="developer",
+            reason="Potwierdzono ręcznie lub przez Gemini.",
+            grounding_status="verified",
+        )
+    else:
+        screening.update(status="other_activity", verified=True)
+        current_classification.update(
+            business_type="other",
+            reason="Wykluczono ręcznie lub przez Gemini.",
+            grounding_status="rejected",
+        )
+    profile["screening"] = screening
+    profile["classification"] = current_classification
+    return profile
+
+
 def iter_json_array(path: Path, *, chunk_size: int = 1024 * 1024) -> Iterator[dict]:
     """Stream a top-level JSON array without loading a multi-GB file into RAM."""
     decoder = simplejson.JSONDecoder(parse_float=Decimal, object_pairs_hook=no_duplicate_keys)
@@ -200,6 +232,25 @@ def latest_collection_dir(root: Path | None = None) -> Path:
     return max(candidates, key=lambda path: (path / "summary.json").stat().st_mtime_ns)
 
 
+def _existing_verifications(path: Path) -> list[tuple]:
+    """Keep human/AI decisions when the rebuildable profile index is refreshed."""
+    if not path.is_file():
+        return []
+    try:
+        with connect(path) as connection:
+            if not connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='company_verification'"
+            ).fetchone():
+                return []
+            return [tuple(row) for row in connection.execute(
+                """SELECT krs,collection_id,status,source,verdict,confidence,summary,
+                          details_json,sources_json,raw_text,model_used,updated_at
+                   FROM company_verification ORDER BY krs"""
+            )]
+    except (OSError, sqlite3.DatabaseError):
+        return []
+
+
 def build_database(collection_dir: Path | None = None, target: Path | None = None) -> dict:
     collection_dir = (collection_dir or latest_collection_dir()).resolve()
     target = (target or database_path()).resolve()
@@ -209,6 +260,7 @@ def build_database(collection_dir: Path | None = None, target: Path | None = Non
     collection_id = collection_dir.name
     expected = int(summary.get("profiles") or 0)
     created_at = datetime.fromtimestamp(summary_path.stat().st_mtime, timezone.utc).isoformat()
+    saved_verifications = _existing_verifications(target)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -262,6 +314,21 @@ def build_database(collection_dir: Path | None = None, target: Path | None = Non
                 CREATE INDEX idx_profile_name ON profile_screening(collection_id, name COLLATE NOCASE);
                 CREATE INDEX idx_profile_revenue ON profile_screening(collection_id, latest_revenue_number);
                 CREATE INDEX idx_profile_period ON profile_screening(collection_id, latest_period);
+                CREATE TABLE company_verification (
+                    krs TEXT PRIMARY KEY,
+                    collection_id TEXT,
+                    status TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    verdict TEXT,
+                    confidence TEXT,
+                    summary TEXT,
+                    details_json TEXT,
+                    sources_json TEXT,
+                    raw_text TEXT,
+                    model_used TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX idx_comp_verif_status ON company_verification(status);
             """)
             conn.execute(
                 "INSERT INTO profile_collection VALUES (?,?,?,?,?,?,?)",
@@ -270,6 +337,14 @@ def build_database(collection_dir: Path | None = None, target: Path | None = Non
                     dumps(summary), str(source), source.stat().st_size, source.stat().st_mtime_ns,
                 ),
             )
+            if saved_verifications:
+                conn.executemany(
+                    """INSERT INTO company_verification (
+                        krs,collection_id,status,source,verdict,confidence,summary,
+                        details_json,sources_json,raw_text,model_used,updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    saved_verifications,
+                )
             insert = """INSERT INTO profile_screening (
                 collection_id,krs,name,city,region,status,segment,name_signal,
                 search_text,summary_text,primary_pkd,primary_pkd_description,
@@ -348,7 +423,7 @@ def require_collection(collection: str) -> None:
         raise KeyError(collection)
 
 
-def filter_clauses(collection, *, q='', status='all', segment='all', city='', region='', county='', municipality='', business_type='all', activity='all', revenue_min=None, revenue_max=None, profit_min=None, profit_max=None):
+def filter_clauses(collection, *, q='', status='all', segment='all', city='', region='', county='', municipality='', business_type='all', activity='all', verification='all', revenue_min=None, revenue_max=None, profit_min=None, profit_max=None):
     clauses = ["collection_id=?"]
     params: list[object] = [collection]
     if status == "name_signal":
@@ -416,6 +491,13 @@ def filter_clauses(collection, *, q='', status='all', segment='all', city='', re
     if activity != 'all':
         clauses.append("is_active=?")
         params.append(1 if activity=='active' else 0)
+    if verification == 'verified':
+        clauses.append("EXISTS (SELECT 1 FROM company_verification v WHERE v.krs=profile_screening.krs AND v.status IN ('confirmed','rejected'))")
+    elif verification == 'unverified':
+        clauses.append("NOT EXISTS (SELECT 1 FROM company_verification v WHERE v.krs=profile_screening.krs AND v.status IN ('confirmed','rejected'))")
+    elif verification in ('confirmed', 'rejected'):
+        clauses.append("EXISTS (SELECT 1 FROM company_verification v WHERE v.krs=profile_screening.krs AND v.status=?)")
+        params.append(verification)
     for field, low, high in [('annual_revenue',revenue_min,revenue_max),('annual_profit',profit_min,profit_max)]:
         if low is not None:
             clauses.append(field+'>=?'); params.append(low)
@@ -441,12 +523,19 @@ def catalog(
             raise KeyError(collection)
         total = conn.execute("SELECT count(*) AS total FROM profile_screening" + where, params).fetchone()["total"]
         rows = conn.execute(
-            "SELECT catalog_json_zlib FROM profile_screening" + where
+            """SELECT catalog_json_zlib,
+                      (SELECT status FROM company_verification v WHERE v.krs=profile_screening.krs) verification_status
+               FROM profile_screening""" + where
             + f" ORDER BY ({order_column}) IS NULL, {order_column} {order}, krs ASC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
+    items = []
+    for row in rows:
+        item = decompress_json(row["catalog_json_zlib"])
+        item["verification_status"] = row["verification_status"]
+        items.append(item)
     return {
-        "items": [decompress_json(row["catalog_json_zlib"]) for row in rows],
+        "items": items,
         "total": total, "limit": limit, "offset": offset, "sort": sort, "direction": direction,
     }
 
@@ -459,7 +548,8 @@ def export_rows(collection: str, *, q: str, status: str, segment: str, city: str
         rows = conn.execute(
             """SELECT krs,name,city,region,status,primary_pkd,primary_pkd_description,
                       latest_period,latest_currency,latest_revenue_text AS revenue,
-                      segment,name_signal,screening_reason,business_type,is_active,annual_period,annual_revenue,annual_profit,classification_json
+                      segment,name_signal,screening_reason,business_type,is_active,annual_period,annual_revenue,annual_profit,classification_json,
+                      (SELECT status FROM company_verification v WHERE v.krs=profile_screening.krs) verification_status
                FROM profile_screening WHERE """ + " AND ".join(clauses) + " ORDER BY krs",
             params,
         ).fetchall()

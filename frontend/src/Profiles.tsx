@@ -12,24 +12,40 @@ const labels: Record<string, string> = {
 const segments: Record<string, string> = {
   residential: 'Mieszkaniowy', commercial: 'Komercyjny / magazynowy', mixed: 'Mieszany', unknown: 'Nieokreślony',
 };
+const verificationLabels: Record<string, string> = {
+  all: 'Wszystkie firmy',
+  verified: 'Wszystkie zweryfikowane',
+  confirmed: 'Potwierdzone jako deweloper',
+  rejected: 'Wykluczone — nie deweloper',
+  unverified: 'Jeszcze niezweryfikowane',
+};
 const fmt = (v: number) => v.toLocaleString('pl-PL');
 type LocalVerification = 'confirmed' | 'rejected';
 function verificationKey(collection: string) { return `company-lab:verification:${collection}`; }
 function loadVerifications(collection: string): Record<string, LocalVerification> {
   try { return typeof window === 'undefined' ? {} : JSON.parse(window.localStorage.getItem(verificationKey(collection)) || '{}'); } catch { return {}; }
 }
-function saveVerification(collection: string, krs: string, value: LocalVerification | null) {
+function storeVerification(collection: string, krs: string, value: LocalVerification | null) {
   if (typeof window === 'undefined') return;
   const current = loadVerifications(collection);
   if (value) current[krs] = value; else delete current[krs];
   window.localStorage.setItem(verificationKey(collection), JSON.stringify(current));
   window.dispatchEvent(new CustomEvent('company-lab:verification'));
-  // Sync to SQLite database asynchronously
-  fetch(`/api/profiles/${krs}/verification`, {
+}
+async function saveVerification(collection: string, krs: string, value: LocalVerification | null) {
+  const previous = loadVerifications(collection)[krs] || null;
+  storeVerification(collection, krs, value);
+  try {
+    const response = await fetch(`/api/profiles/${krs}/verification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: value }),
-  }).catch(() => {});
+    });
+    if (!response.ok) throw new Error('Nie udało się zapisać weryfikacji w bazie.');
+  } catch (error) {
+    storeVerification(collection, krs, previous);
+    throw error;
+  }
 }
 export type ProfileCollection = {
   id: string; created_at: string;
@@ -57,6 +73,7 @@ type Profile = {
   primary_pkd_description?: any; connections?: Record<string, any>; raw_profile?: Record<string, any>;
   financial_quality?: { periods: number; with_revenue: number; with_ebit: number; with_provider_ebitda: number; with_calculated_ebitda: number; status: 'complete' | 'partial' | 'missing' };
   verification?: any;
+  verification_status?: LocalVerification | null;
 };
 
 function Feedback({ loading, error }: { loading: boolean; error?: string }) {
@@ -102,8 +119,9 @@ export function ProfileOverview({ collection, onBrowse, onResearch }: { collecti
 export function ProfileCatalog({ collection, initialStatus, onSelect }: { collection: string; initialStatus: string; onSelect: (krs: string) => void }) {
   const [business, setBusiness] = useState('all');
   const [activity, setActivity] = useState('all');
+  const [verification, setVerification] = useState('all');
   const [ranges,setRanges] = useState<Record<string,string>>({revenue_min:'',revenue_max:'',profit_min:'',profit_max:''});
-  const extra = new URLSearchParams({business_type:business,activity});
+  const extra = new URLSearchParams({business_type:business,activity,verification});
   Object.entries(ranges).forEach(([key,value])=>{if(value!=='' && Number.isFinite(Number(value)))extra.set(key,value);});
   const extraQuery = extra.toString();
   const invalidRange = ['revenue','profit'].some(key=>ranges[key+'_min']!=='' && ranges[key+'_max']!=='' && Number(ranges[key+'_min'])>Number(ranges[key+'_max']));
@@ -116,6 +134,7 @@ export function ProfileCatalog({ collection, initialStatus, onSelect }: { collec
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
   const [verifications, setVerifications] = useState<Record<string, LocalVerification>>(() => loadVerifications(collection));
   const [rowVerifying, setRowVerifying] = useState<Record<string, boolean>>({});
+  const [verificationRevision, setVerificationRevision] = useState(0);
   const [offset, setOffset] = useState(0);
   const tableRef = useRef<HTMLElement>(null);
 
@@ -158,7 +177,7 @@ export function ProfileCatalog({ collection, initialStatus, onSelect }: { collec
       const data = await resp.json();
       const newStatus: LocalVerification | null = data.is_developer === true ? 'confirmed' : data.is_developer === false ? 'rejected' : null;
       if (newStatus) {
-        saveVerification(collection, krs, newStatus);
+        storeVerification(collection, krs, newStatus);
         setVerifications(prev => ({ ...prev, [krs]: newStatus }));
       }
       setCachedGeminiResult(krs, data);
@@ -170,8 +189,8 @@ export function ProfileCatalog({ collection, initialStatus, onSelect }: { collec
   };
 
   useEffect(() => { const timer = setTimeout(() => { setQ(query); setOffset(0); }, 300); return () => clearTimeout(timer); }, [query]);
-  useEffect(() => { const refresh = () => setVerifications(loadVerifications(collection)); window.addEventListener('company-lab:verification', refresh); return () => window.removeEventListener('company-lab:verification', refresh); }, [collection]);
-  const state = useApi<{ items: Profile[]; total: number }>(`/api/profiles?collection=${collection}&status=${status}&segment=${segment}&sort=${sort}&direction=${direction}&q=${encodeURIComponent(q)}&city=${encodeURIComponent(location.city)}&region=${encodeURIComponent(location.region)}&county=${encodeURIComponent(location.county || '')}&municipality=${encodeURIComponent(location.municipality || '')}&offset=${offset}&${extraQuery}`);
+  useEffect(() => { const refresh = () => { setVerifications(loadVerifications(collection)); setVerificationRevision(value => value + 1); }; window.addEventListener('company-lab:verification', refresh); return () => window.removeEventListener('company-lab:verification', refresh); }, [collection]);
+  const state = useApi<{ items: Profile[]; total: number }>(`/api/profiles?collection=${collection}&status=${status}&segment=${segment}&sort=${sort}&direction=${direction}&q=${encodeURIComponent(q)}&city=${encodeURIComponent(location.city)}&region=${encodeURIComponent(location.region)}&county=${encodeURIComponent(location.county || '')}&municipality=${encodeURIComponent(location.municipality || '')}&offset=${offset}&${extraQuery}&verification_revision=${verificationRevision}`);
 
   useEffect(() => {
     if (state.data && state.data.total > 0 && offset >= state.data.total) {
@@ -278,7 +297,7 @@ export function ProfileCatalog({ collection, initialStatus, onSelect }: { collec
     );
   };
   const exportUrl = `/api/profiles/export.csv?collection=${encodeURIComponent(collection)}&status=${encodeURIComponent(status)}&segment=${encodeURIComponent(segment)}&q=${encodeURIComponent(q)}&city=${encodeURIComponent(location.city)}&region=${encodeURIComponent(location.region)}&county=${encodeURIComponent(location.county || '')}&municipality=${encodeURIComponent(location.municipality || '')}&${extraQuery}`;
-  const extraFilters = { business_type: business, activity, revenue_min: ranges.revenue_min ? Number(ranges.revenue_min) : null, revenue_max: ranges.revenue_max ? Number(ranges.revenue_max) : null, profit_min: ranges.profit_min ? Number(ranges.profit_min) : null, profit_max: ranges.profit_max ? Number(ranges.profit_max) : null };
+  const extraFilters = { business_type: business, activity, verification, revenue_min: ranges.revenue_min ? Number(ranges.revenue_min) : null, revenue_max: ranges.revenue_max ? Number(ranges.revenue_max) : null, profit_min: ranges.profit_min ? Number(ranges.profit_min) : null, profit_max: ranges.profit_max ? Number(ranges.profit_max) : null };
   const [exporting, setExporting] = useState(false);
   const [exportError,setExportError] = useState('');
   const financialSummaryFor = (profile: Profile) => {
@@ -308,6 +327,7 @@ export function ProfileCatalog({ collection, initialStatus, onSelect }: { collec
         county: location.county || '', municipality: location.municipality || '',
         business_type: extraFilters.business_type || 'all',
         activity: extraFilters.activity || 'all',
+        verification: extraFilters.verification || 'all',
       };
       if (extraFilters.revenue_min != null) params.revenue_min = String(extraFilters.revenue_min);
       if (extraFilters.revenue_max != null) params.revenue_max = String(extraFilters.revenue_max);
@@ -630,14 +650,20 @@ function RevenueRangeFilter({
   return <><div className="catalog-heading"><h1>Katalog firm<span>.</span></h1><p>Wyniki finansowe, historia i powiązania.<br />Znajdź firmę i zajrzyj głębiej.</p></div>
     <label className="catalog-search">Szukaj firmy<input aria-label="Szukaj w profilach" placeholder="Nazwa, KRS, miasto lub słowo w opisie…" value={query} onChange={e => setQuery(e.target.value)} /></label>
     <p className="filter-context">Wyświetlasz: <strong>{status === 'all' ? 'wszystkie firmy' : labels[status]}</strong>. {status !== 'all' && <button className="text-button" onClick={() => { setStatus('all'); setOffset(0); }}>Pokaż wszystkie firmy →</button>}</p>
-    <details className="catalog-panel"><summary>Działalność i wyniki finansowe <span>{business !== 'all' || activity !== 'all' || Object.values(ranges).some(Boolean) ? 'Filtry aktywne' : 'Ustaw filtry'}</span></summary>
+    <div className="verification-filter-bar">
+      <label>Stan weryfikacji<select aria-label="Filtr weryfikacji firmy" value={verification} onChange={event => { setVerification(event.target.value); setOffset(0); }}>
+        {Object.entries(verificationLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+      </select></label>
+      <p><strong>{verificationLabels[verification]}</strong><span>Decyzje ręczne i wyniki Gemini zapisane w bazie. Filtr wpływa także na eksport CSV i mapę finansową.</span></p>
+    </div>
+    <details className="catalog-panel"><summary>Działalność i wyniki finansowe <span>{business !== 'all' || activity !== 'all' || verification !== 'all' || Object.values(ranges).some(Boolean) ? 'Filtry aktywne' : 'Ustaw filtry'}</span></summary>
       <div className="enrichment-filters">
         <label>Profil działalności<select aria-label="Nowa klasyfikacja" value={business} onChange={e=>{setBusiness(e.target.value);setStatus('all');setOffset(0);}}><option value="all">Wszystkie profile działalności</option>{Object.entries(businessLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
         <label>Aktywność<select value={activity} onChange={e=>{setActivity(e.target.value);setOffset(0);}}><option value="all">Wszystkie statusy</option><option value="active">Aktywne</option><option value="inactive">Nieaktywne / zawieszone</option></select></label>
         <RevenueRangeFilter ranges={ranges} setRanges={setRanges} setOffset={setOffset} />
         <label>Zysk netto od (PLN)<input type="number" step="any" value={ranges.profit_min} placeholder="Bez ograniczenia" onChange={e=>{setRanges(prev=>({...prev,profit_min:e.target.value}));setOffset(0);}} /></label>
         <label>Zysk netto do (PLN)<input type="number" step="any" value={ranges.profit_max} placeholder="Bez ograniczenia" onChange={e=>{setRanges(prev=>({...prev,profit_max:e.target.value}));setOffset(0);}} /></label>
-        <button onClick={()=>{setBusiness('all');setActivity('all');setRanges({revenue_min:'',revenue_max:'',profit_min:'',profit_max:''});setOffset(0);}}>Wyczyść filtry</button>
+        <button onClick={()=>{setBusiness('all');setActivity('all');setVerification('all');setRanges({revenue_min:'',revenue_max:'',profit_min:'',profit_max:''});setOffset(0);}}>Wyczyść filtry</button>
       </div>
       <p className="muted">Kwoty dotyczą ostatniego pełnego roku kalendarzowego w PLN, sprawozdanie jednostkowe. Rok jest podany przy firmie. Brak wartości nie oznacza zera. Klasyfikacja według reguł nie jest weryfikacją w sieci.</p>
       {invalidRange && <p role="alert">Dolna granica nie może być większa od górnej.</p>}
@@ -659,7 +685,7 @@ function RevenueRangeFilter({
       <button className="button-link" onClick={downloadExport} disabled={exporting}>{exporting ? 'Przygotowuję…' : 'Eksport CSV ↓'}</button>
       </div></details>
     </div>{exportError && <p className="notice" role="alert">{exportError}</p>}<Feedback {...state} />
-    {state.data && <section ref={tableRef} className="card table-card"><div className="section-title"><h2>{status === 'all' ? 'Wszystkie profile' : labels[status]}</h2><span>{fmt(state.data.total)} firm</span></div>
+    {state.data && <section ref={tableRef} className="card table-card"><div className="section-title"><h2>{verification === 'all' ? (status === 'all' ? 'Wszystkie profile' : labels[status]) : verificationLabels[verification]}</h2><span>{fmt(state.data.total)} firm</span></div>
       {(location.city || location.region || location.county || location.municipality) && (() => {
         const getList = (v?: string) => v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
         const cities = getList(location.city);
@@ -733,7 +759,7 @@ function RevenueRangeFilter({
           const quality = qualityFor(p);
           const summary = financialSummaryFor(p);
           const hasRevenue = summary.revenue != null && summary.revenue !== '';
-          const local = verifications[p.krs];
+          const local = verifications[p.krs] || p.verification_status || undefined;
           const cls = p.classification;
           const statusLabel = p.provider_status === 'active' ? 'aktywna' : p.provider_status === 'inactive' ? 'nieaktywna' : p.provider_status;
           return <tr key={p.krs}>
@@ -790,7 +816,7 @@ function RevenueRangeFilter({
         })}
       </tbody></table></div>
       <div className="mobile-catalog-list" aria-label="Lista firm">
-        {visibleItems.map(p => { const quality = qualityFor(p); const summary = financialSummaryFor(p); const hasRevenue = summary.revenue != null && summary.revenue !== ''; const local = verifications[p.krs]; return <article className="mobile-company-card" key={p.krs}>
+        {visibleItems.map(p => { const quality = qualityFor(p); const summary = financialSummaryFor(p); const hasRevenue = summary.revenue != null && summary.revenue !== ''; const local = verifications[p.krs] || p.verification_status || undefined; return <article className="mobile-company-card" key={p.krs}>
           <div className="mobile-company-heading"><div><button className="text-button firm-name" onClick={() => onSelect(p.krs)}>{p.name || p.krs}</button><span className="mono">KRS {p.krs}</span></div><span className={`quality-pill ${quality.className}`}>{quality.label}</span></div>
           <dl className="mobile-company-facts">
             <div><dt>Lokalizacja</dt><dd>{[p.city,p.region].filter(Boolean).join(', ') || 'Brak danych'}</dd></div>
@@ -2128,6 +2154,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
   const website = websiteUrl(p?.website || null);
   const financials = (p?.financials || []) as FinancialRecord[];
   const [localVerification, setLocalVerification] = useState<LocalVerification | null>(() => loadVerifications(collection)[krs] || null);
+  const [verificationSaving, setVerificationSaving] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
 
   useEffect(() => {
     if (p?.verification?.status) {
@@ -2137,9 +2165,19 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
     }
   }, [p]);
 
-  const updateLocalVerification = (value: LocalVerification | null) => {
-    saveVerification(collection, krs, value);
+  const updateLocalVerification = async (value: LocalVerification | null) => {
+    const previous = localVerification;
     setLocalVerification(value);
+    setVerificationSaving(true);
+    setVerificationError('');
+    try {
+      await saveVerification(collection, krs, value);
+    } catch (error) {
+      setLocalVerification(previous);
+      setVerificationError(error instanceof Error ? error.message : 'Nie udało się zapisać weryfikacji. Spróbuj ponownie.');
+    } finally {
+      setVerificationSaving(false);
+    }
   };
 
   return <><button className="text-button" onClick={onBack}>← Wróć do profili</button><Feedback {...state} />{p && <>
@@ -2182,7 +2220,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
         <button
           type="button"
           className={`qual-btn qual-btn-confirmed ${localVerification === 'confirmed' ? 'active' : ''}`}
-          onClick={() => updateLocalVerification('confirmed')}
+          onClick={() => void updateLocalVerification('confirmed')}
+          disabled={verificationSaving}
           title="Oznacz firmę jako potwierdzonego dewelopera"
         >
           <span className="qual-icon">✓</span>
@@ -2194,7 +2233,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
         <button
           type="button"
           className={`qual-btn qual-btn-rejected ${localVerification === 'rejected' ? 'active' : ''}`}
-          onClick={() => updateLocalVerification('rejected')}
+          onClick={() => void updateLocalVerification('rejected')}
+          disabled={verificationSaving}
           title="Oznacz firmę jako niebędącą deweloperem"
         >
           <span className="qual-icon">✕</span>
@@ -2207,7 +2247,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
           <button
             type="button"
             className="qual-btn qual-btn-reset"
-            onClick={() => updateLocalVerification(null)}
+            onClick={() => void updateLocalVerification(null)}
+            disabled={verificationSaving}
             title="Przywróć status pierwotny z automatycznego przesiewu"
           >
             <span className="qual-icon">↺</span>
@@ -2218,6 +2259,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
           </button>
         )}
       </div>
+      {verificationSaving && <p className="muted" role="status">Zapisuję decyzję i aktualizuję filtry oraz mapę…</p>}
+      {verificationError && <p className="notice error" role="alert">{verificationError}</p>}
       {localVerification && (
         <div className="qual-status-sync-note">
           ✓ Wybór zapisany w bazie danych. Status w katalogu został automatycznie zaktualizowany.
@@ -2230,7 +2273,8 @@ export function CurrentProfile({ collection, krs, onBack }: { collection: string
       collection={collection}
       companyName={p.name}
       localVerification={localVerification}
-      onApplyVerification={updateLocalVerification}
+      onApplyVerification={value => { void updateLocalVerification(value); }}
+      onGeminiVerification={value => { storeVerification(collection, krs, value); setLocalVerification(value); }}
       initialDbVerification={p.verification}
     />
     {financials.length ? <FinancialSection financials={financials} notes={p.financial_notes} status={p.screening.status} /> : <p className="notice">Brak sprawozdań finansowych w tym profilu.</p>}

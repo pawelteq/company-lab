@@ -42,13 +42,14 @@ def unavailable(exc: Exception) -> HTTPException:
 def extra_filters(
     business_type: Literal['all','developer','spv','contractor','other','review','needs_web_grounding']='all',
     activity: Literal['all','active','inactive']='all',
+    verification: Literal['all','verified','confirmed','rejected','unverified']='all',
     revenue_min: float | None=Query(None,allow_inf_nan=False), revenue_max: float | None=Query(None,allow_inf_nan=False),
     profit_min: float | None=Query(None,allow_inf_nan=False), profit_max: float | None=Query(None,allow_inf_nan=False),
 ):
     for low,high in [(revenue_min,revenue_max),(profit_min,profit_max)]:
         if low is not None and high is not None and low>high:
             raise HTTPException(422,'Dolna granica nie może być większa od górnej.')
-    return dict(business_type=business_type,activity=activity,revenue_min=revenue_min,revenue_max=revenue_max,profit_min=profit_min,profit_max=profit_max)
+    return dict(business_type=business_type,activity=activity,verification=verification,revenue_min=revenue_min,revenue_max=revenue_max,profit_min=profit_min,profit_max=profit_max)
 
 @router.get("/collections")
 def collections():
@@ -130,14 +131,14 @@ def export_catalog(
     writer.writerow([
         "KRS", "Nazwa", "Miasto", "Województwo", "Status", "PKD główne",
         "Opis PKD", "Ostatni okres", "Waluta", "Przychód", "Segment",
-        "Sygnał nazwy", "Uzasadnienie", "Nowa klasyfikacja", "Aktywna", "Pełny rok PLN", "Przychód roczny PLN", "Zysk roczny PLN", "Reguły i dowody",
+        "Sygnał nazwy", "Uzasadnienie", "Nowa klasyfikacja", "Aktywna", "Pełny rok PLN", "Przychód roczny PLN", "Zysk roczny PLN", "Reguły i dowody", "Weryfikacja",
     ])
     for row in rows:
         writer.writerow([
             row.get(key) for key in (
                 "krs", "name", "city", "region", "status", "primary_pkd",
                 "primary_pkd_description", "latest_period", "latest_currency",
-                "revenue", "segment", "name_signal", "screening_reason", "business_type", "is_active", "annual_period", "annual_revenue", "annual_profit", "classification_json",
+                "revenue", "segment", "name_signal", "screening_reason", "business_type", "is_active", "annual_period", "annual_revenue", "annual_profit", "classification_json", "verification_status",
             )
         ])
     return Response(

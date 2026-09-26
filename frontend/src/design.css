@@ -147,6 +147,11 @@ tbody tr:hover { background: #f1f3f4; }
 .catalog-search input { display: block; width: 100%; margin-top: 8px; min-height: 58px; padding: 14px 18px; border-color: #8e979e; font-size: 17px; font-weight: 400; }
 .filter-context { background: none; padding: 0; color: var(--muted); border-radius: 0; font-size: 12px; margin: 12px 0 24px; }
 .catalog-panel { border-top: 1px solid var(--line); padding: 0; background: transparent; }
+.verification-filter-bar { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(0, 1.3fr); gap: 24px; align-items: end; padding: 14px 0; border-top: 1px solid var(--line); }
+.verification-filter-bar label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.verification-filter-bar select { width: 100%; min-height: 42px; }
+.verification-filter-bar p { margin: 0 0 3px; display: grid; gap: 3px; font-size: 13px; color: var(--ink); }
+.verification-filter-bar p span { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .catalog-panel > summary { font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; padding: 14px 0; }
 .catalog-panel > summary > span { float: right; font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 12px; }
 .catalog-panel[open] { padding-bottom: 18px; }
@@ -374,6 +379,7 @@ tbody tr:hover { background: #f1f3f4; }
   .profile-toolbar { display: block; padding: 0; margin: 0 0 24px; }
   .catalog-filter-options { grid-template-columns: 1fr; }
   .enrichment-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .verification-filter-bar { grid-template-columns: 1fr; gap: 8px; align-items: stretch; }
   .enrichment-filters .revenue-filter-card { grid-column: auto; grid-row: auto; }
   .enrichment-filters input, .enrichment-filters select { width: 100%; }
   .revenue-filter-card { width: 100%; max-width: none; padding: 14px 12px; }

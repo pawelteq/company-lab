@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 from backend import local_profiles
 
@@ -79,3 +80,35 @@ def test_name_signal_and_export(tmp_path, monkeypatch):
     )
     assert len(exported) == 1
     assert exported[0]["primary_pkd"] == "41.10.Z"
+
+
+def test_verification_filter_and_rebuild_preserve_decisions(tmp_path, monkeypatch):
+    collection, database, _ = build_sample(tmp_path, monkeypatch)
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            """INSERT INTO company_verification
+               (krs,collection_id,status,source,updated_at)
+               VALUES (?,?,?,?,?)""",
+            ("0000000001", collection, "confirmed", "user", "2026-09-26T12:00:00+00:00"),
+        )
+        connection.commit()
+
+    confirmed = local_profiles.catalog(
+        collection, q="", status="all", segment="all", verification="confirmed",
+        sort="krs", direction="asc", limit=25, offset=0,
+    )
+    unverified = local_profiles.catalog(
+        collection, q="", status="all", segment="all", verification="unverified",
+        sort="krs", direction="asc", limit=25, offset=0,
+    )
+    assert confirmed["total"] == 1
+    assert confirmed["items"][0]["verification_status"] == "confirmed"
+    assert unverified["total"] == 1
+    assert unverified["items"][0]["krs"] == "0000000002"
+
+    local_profiles.build_database(tmp_path / collection, database)
+    with closing(sqlite3.connect(database)) as connection:
+        saved = connection.execute(
+            "SELECT status,source FROM company_verification WHERE krs='0000000001'"
+        ).fetchone()
+    assert saved == ("confirmed", "user")

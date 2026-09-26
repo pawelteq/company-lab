@@ -25,7 +25,9 @@ def _source_databases(folder: Path, marker: str = "pierwsza") -> None:
         [
             "CREATE TABLE profile_collection (id INTEGER PRIMARY KEY, name TEXT)",
             "CREATE TABLE profile_screening (id INTEGER PRIMARY KEY, result TEXT)",
+            "CREATE TABLE company_verification (krs TEXT PRIMARY KEY, status TEXT, source TEXT)",
             f"INSERT INTO profile_collection (name) VALUES ('{marker}')",
+            f"INSERT INTO company_verification VALUES ('0000000001', 'confirmed', '{marker}')",
         ],
     )
     _database(
@@ -71,6 +73,9 @@ def test_export_and_import_complete_portable_bundle(tmp_path: Path) -> None:
     assert imported["backup"] is not None
     with closing(sqlite3.connect(target / "company_lab.sqlite3")) as connection:
         assert connection.execute("SELECT name FROM profile_collection").fetchone()[0] == "pierwsza"
+        assert connection.execute(
+            "SELECT status, source FROM company_verification WHERE krs='0000000001'"
+        ).fetchone() == ("confirmed", "pierwsza")
     with closing(sqlite3.connect(target / "financial_map.sqlite3")) as connection:
         assert connection.execute("SELECT value FROM meta WHERE key='marker'").fetchone()[0] == "pierwsza"
     backup = Path(imported["backup"])

@@ -10,6 +10,20 @@ from backend.local_profiles import database_path
 logger = logging.getLogger(__name__)
 
 
+def _refresh_dependants(krs: str, status: str | None) -> None:
+    """Make filters and live aggregations observe a decision immediately."""
+    try:
+        from backend.financial_map import set_verification_status
+        set_verification_status(krs, status)
+    except (FileNotFoundError, OSError, sqlite3.DatabaseError) as exc:
+        logger.warning("Nie udało się zsynchronizować weryfikacji z mapą: %s", exc)
+    try:
+        from backend.cache import invalidate
+        invalidate("cl:*")
+    except Exception as exc:
+        logger.debug("Nie udało się wyczyścić cache po weryfikacji: %s", exc)
+
+
 def get_connection() -> sqlite3.Connection:
     path = database_path()
     conn = sqlite3.connect(path, timeout=15.0)
@@ -76,6 +90,7 @@ def save_gemini_verification(krs: str, collection_id: str | None, result: dict[s
             result.get("model_used") or "",
             now_iso,
         ))
+    _refresh_dependants(krs, status)
     ret = get_verification(krs)
     return ret or {}
 
@@ -85,6 +100,7 @@ def save_user_verification(krs: str, status: str | None, notes: str | None = Non
     if not status:
         with get_connection() as conn:
             conn.execute("DELETE FROM company_verification WHERE krs=?", (krs,))
+        _refresh_dependants(krs, None)
         return None
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -101,6 +117,7 @@ def save_user_verification(krs: str, status: str | None, notes: str | None = Non
                 INSERT INTO company_verification (krs, status, source, updated_at)
                 VALUES (?, ?, 'user', ?)
             """, (krs, status, now_iso))
+    _refresh_dependants(krs, status)
     return get_verification(krs)
 
 

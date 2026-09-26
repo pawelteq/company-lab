@@ -16,7 +16,7 @@ PROTOCOL = {
     "version": "developer-questions-2-alpha-10",
     "significance_level": SIGNIFICANCE_LEVEL,
     "confidence_level": CONFIDENCE_LEVEL,
-    "selection": "same transparent developer screen as leverage study: active, description candidate or explicit name signal, at least five usable annual PLN reports and latest revenue above PLN 250,000",
+    "selection": "same transparent developer screen as leverage study: saved human/Gemini decisions override automatic labels; otherwise active, description candidate or explicit name signal, at least five usable annual PLN reports and latest revenue above PLN 250,000",
     "questions": "predeclared exploratory associations; company and year fixed effects, firm-clustered standard errors; no causal claims",
     "horizon": "one following full year except revenue growth, which is already defined from year t to t+1",
 }

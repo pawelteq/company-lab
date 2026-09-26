@@ -24,7 +24,7 @@ from backend import local_profiles
 from etl.config import ROOT
 
 
-INDEX_VERSION = "financial-map-v1"
+INDEX_VERSION = "financial-map-v2"
 DEFAULT_PATH = ROOT / ".local" / "financial_map.sqlite3"
 
 AGGREGATIONS = {
@@ -164,6 +164,63 @@ def connect(path: Path | None = None, *, readonly: bool = True):
         conn.close()
 
 
+def _ensure_verification_column(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(company)")}
+    if "verification_status" not in columns:
+        connection.execute("ALTER TABLE company ADD COLUMN verification_status TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_map_company_verification ON company(collection_id,verification_status,krs)"
+    )
+
+
+def sync_verifications(source: Path | None = None, target: Path | None = None) -> dict:
+    """Synchronize all saved decisions without rebuilding financial observations."""
+    source = (source or local_profiles.database_path()).resolve()
+    target = (target or index_path()).resolve()
+    if not source.is_file() or not target.is_file():
+        return {"updated": 0, "available": False}
+    with local_profiles.connect(source) as profiles, connect(target, readonly=False) as atlas:
+        _ensure_verification_column(atlas)
+        atlas.execute("UPDATE company SET verification_status=NULL")
+        table_exists = profiles.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='company_verification'"
+        ).fetchone()
+        rows = profiles.execute(
+            "SELECT krs,status FROM company_verification WHERE status IN ('confirmed','rejected')"
+        ).fetchall() if table_exists else []
+        atlas.executemany(
+            "UPDATE company SET verification_status=? WHERE krs=?",
+            ((row["status"], row["krs"]) for row in rows),
+        )
+        atlas.execute("INSERT OR REPLACE INTO meta(key,value) VALUES ('version',?)", (INDEX_VERSION,))
+        atlas.execute("INSERT OR REPLACE INTO meta(key,value) VALUES ('source_size',?)", (str(source.stat().st_size),))
+        atlas.execute("INSERT OR REPLACE INTO meta(key,value) VALUES ('source_mtime_ns',?)", (str(source.stat().st_mtime_ns),))
+        atlas.commit()
+    return {"updated": len(rows), "available": True}
+
+
+def set_verification_status(krs: str, status: str | None, target: Path | None = None) -> int:
+    """Update one company decision so map calculations change on the next request."""
+    target = (target or index_path()).resolve()
+    if not target.is_file():
+        return 0
+    with connect(target, readonly=False) as atlas:
+        _ensure_verification_column(atlas)
+        cursor = atlas.execute(
+            "UPDATE company SET verification_status=? WHERE krs=?",
+            (status if status in ("confirmed", "rejected") else None, krs),
+        )
+        source = local_profiles.database_path()
+        if source.is_file():
+            atlas.execute("INSERT OR REPLACE INTO meta(key,value) VALUES ('source_size',?)", (str(source.stat().st_size),))
+            atlas.execute(
+                "INSERT OR REPLACE INTO meta(key,value) VALUES ('source_mtime_ns',?)",
+                (str(source.stat().st_mtime_ns),),
+            )
+        atlas.commit()
+        return cursor.rowcount
+
+
 def _norm(value: object) -> str:
     text = str(value or "").casefold().replace("ł", "l")
     text = unicodedata.normalize("NFKD", text)
@@ -270,7 +327,8 @@ def build_index(source: Path | None = None, target: Path | None = None) -> dict:
                     collection_id TEXT NOT NULL, krs TEXT NOT NULL, name TEXT,
                     region_id TEXT, region_name TEXT, county_id TEXT, county_name TEXT,
                     municipality_id TEXT, municipality_name TEXT, primary_pkd TEXT,
-                    business_type TEXT, PRIMARY KEY(collection_id,krs)
+                    business_type TEXT, verification_status TEXT,
+                    PRIMARY KEY(collection_id,krs)
                 );
                 CREATE TABLE company_pkd (
                     collection_id TEXT NOT NULL, krs TEXT NOT NULL, code TEXT NOT NULL,
@@ -283,17 +341,23 @@ def build_index(source: Path | None = None, target: Path | None = None) -> dict:
                     PRIMARY KEY(collection_id,krs,year)
                 );
             """)
-            company_sql = "INSERT INTO company VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+            company_sql = "INSERT INTO company VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
             pkd_sql = "INSERT OR IGNORE INTO company_pkd VALUES (?,?,?,?,?)"
             fields_sql = ",".join(f'"{field}"' for field in SOURCE_FIELDS)
             placeholders = ",".join("?" for _ in range(4 + len(SOURCE_FIELDS)))
             observation_sql = f"INSERT INTO observation(collection_id,krs,year,currency,{fields_sql}) VALUES ({placeholders})"
             source_columns = {row["name"] for row in source_conn.execute("PRAGMA table_info(profile_screening)")}
-            county_sql = "county" if "county" in source_columns else "NULL AS county"
-            municipality_sql = "municipality" if "municipality" in source_columns else "NULL AS municipality"
-            business_sql = "business_type" if "business_type" in source_columns else "NULL AS business_type"
-            rows = source_conn.execute(f"""SELECT collection_id,krs,name,region,{county_sql},{municipality_sql},
-                primary_pkd,{business_sql},profile_json_zlib FROM profile_screening""")
+            county_sql = "s.county" if "county" in source_columns else "NULL AS county"
+            municipality_sql = "s.municipality" if "municipality" in source_columns else "NULL AS municipality"
+            business_sql = "s.business_type" if "business_type" in source_columns else "NULL AS business_type"
+            has_verifications = source_conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='company_verification'"
+            ).fetchone()
+            verification_sql = "v.status" if has_verifications else "NULL"
+            verification_join = "LEFT JOIN company_verification v ON v.krs=s.krs" if has_verifications else ""
+            rows = source_conn.execute(f"""SELECT s.collection_id,s.krs,s.name,s.region,{county_sql},{municipality_sql},
+                s.primary_pkd,{business_sql},s.profile_json_zlib,{verification_sql} verification_status
+                FROM profile_screening s {verification_join}""")
             for row in rows:
                 profile = local_profiles.decompress_json(row["profile_json_zlib"])
                 region_id = province_by_name.get(_norm(row["region"]))
@@ -315,7 +379,7 @@ def build_index(source: Path | None = None, target: Path | None = None) -> dict:
                 out.execute(company_sql, (
                     row["collection_id"], row["krs"], row["name"], region_id, region_name,
                     county_id, county_name, municipality_id, municipality_name,
-                    row["primary_pkd"], row["business_type"],
+                    row["primary_pkd"], row["business_type"], row["verification_status"],
                 ))
                 activities = profile.get("activities") if isinstance(profile.get("activities"), list) else []
                 if not activities and row["primary_pkd"]:
@@ -353,6 +417,7 @@ def build_index(source: Path | None = None, target: Path | None = None) -> dict:
                 CREATE INDEX idx_map_company_region ON company(collection_id,region_id);
                 CREATE INDEX idx_map_company_county ON company(collection_id,county_id);
                 CREATE INDEX idx_map_company_municipality ON company(collection_id,municipality_id);
+                CREATE INDEX idx_map_company_verification ON company(collection_id,verification_status,krs);
                 CREATE INDEX idx_map_pkd ON company_pkd(collection_id,code,is_primary,target_match,krs);
                 CREATE INDEX idx_map_pkd_primary ON company_pkd(collection_id,is_primary,code,krs);
                 CREATE INDEX idx_map_pkd_target ON company_pkd(collection_id,target_match,is_primary,krs);
@@ -424,7 +489,7 @@ def metadata(collection: str) -> dict:
     }
 
 
-def _filters(collection: str, pkd: str, pkd_mode: str) -> tuple[str, list]:
+def _filters(collection: str, pkd: str, pkd_mode: str, verification: str = "all") -> tuple[str, list]:
     clauses = ["c.collection_id=?"]
     params: list = [collection]
     if pkd:
@@ -436,6 +501,13 @@ def _filters(collection: str, pkd: str, pkd_mode: str) -> tuple[str, list]:
         if pkd_mode == "primary":
             conditions.append("p.is_primary=1")
         clauses.append("EXISTS (SELECT 1 FROM company_pkd p WHERE p.collection_id=c.collection_id AND p.krs=c.krs AND " + " AND ".join(conditions) + ")")
+    if verification == "verified":
+        clauses.append("c.verification_status IN ('confirmed','rejected')")
+    elif verification == "unverified":
+        clauses.append("c.verification_status IS NULL")
+    elif verification in ("confirmed", "rejected"):
+        clauses.append("c.verification_status=?")
+        params.append(verification)
     return " AND ".join(clauses), params
 
 
@@ -493,9 +565,9 @@ def _format(value: float | None, fmt: str, *, change: bool = False) -> str:
     return f"{sign}{value:.2f}".replace(".", ",") + suffix
 
 
-def _raw_regions(conn, collection: str, level: str, year: int, metric: dict, aggregation: str, pkd: str, pkd_mode: str) -> tuple[dict, dict]:
+def _raw_regions(conn, collection: str, level: str, year: int, metric: dict, aggregation: str, pkd: str, pkd_mode: str, verification: str = "all") -> tuple[dict, dict]:
     region_id, region_name = _region_columns(level)
-    where, params = _filters(collection, pkd, pkd_mode)
+    where, params = _filters(collection, pkd, pkd_mode, verification)
     counts = {
         row["region_id"]: {"company_count": row["company_count"], "region_name": row["region_name"]}
         for row in conn.execute(f"""SELECT c.{region_id} region_id,min(c.{region_name}) region_name,count(*) company_count
@@ -547,7 +619,8 @@ COMPARISON_METRICS = (
 
 
 def compare_regions(collection: str, region_ids: list[str], *, level: str, year: int,
-                    pkd: str = "", pkd_mode: str = "primary", min_companies: int = 5) -> dict:
+                    pkd: str = "", pkd_mode: str = "primary", min_companies: int = 5,
+                    verification: str = "all") -> dict:
     """Return a stable five-column comparison for at most five regions."""
     wanted = list(dict.fromkeys(region_ids))[:5]
     if not wanted:
@@ -556,7 +629,7 @@ def compare_regions(collection: str, region_ids: list[str], *, level: str, year:
     with connect() as conn:
         for metric_id, aggregation in COMPARISON_METRICS:
             metric = METRICS[metric_id]
-            regions, _ = _raw_regions(conn, collection, level, year, metric, aggregation, pkd, pkd_mode)
+            regions, _ = _raw_regions(conn, collection, level, year, metric, aggregation, pkd, pkd_mode, verification)
             for region_id in wanted:
                 item = regions.get(region_id)
                 if item:
@@ -576,15 +649,16 @@ def compare_regions(collection: str, region_ids: list[str], *, level: str, year:
 
 def map_data(collection: str, *, level: str, year: int, metric_id: str, aggregation: str,
              pkd: str = "", pkd_mode: str = "primary", min_companies: int = 5,
-             view: str = "value", compare_year: int | None = None) -> dict:
+             view: str = "value", compare_year: int | None = None,
+             verification: str = "all") -> dict:
     metric = METRICS[metric_id]
     if aggregation not in metric["available_aggregations"]:
         raise ValueError("Ta agregacja nie jest dostępna dla wybranej metryki")
     with connect() as conn:
-        current, _ = _raw_regions(conn, collection, level, year, metric, aggregation, pkd, pkd_mode)
+        current, _ = _raw_regions(conn, collection, level, year, metric, aggregation, pkd, pkd_mode, verification)
         comparison = {}
         if view == "change":
-            comparison, _ = _raw_regions(conn, collection, level, compare_year or year - 1, metric, aggregation, pkd, pkd_mode)
+            comparison, _ = _raw_regions(conn, collection, level, compare_year or year - 1, metric, aggregation, pkd, pkd_mode, verification)
     eligible = []
     for item in current.values():
         raw_value = item["value"]
@@ -617,21 +691,23 @@ def map_data(collection: str, *, level: str, year: int, metric_id: str, aggregat
         "level": level, "year": year, "compare_year": compare_year or (year - 1 if view == "change" else None),
         "view": view, "metric": {key: value for key, value in metric.items() if key != "field"},
         "aggregation": aggregation, "pkd": pkd, "pkd_mode": pkd_mode,
+        "verification": verification,
         "min_companies": min_companies, "regions": list(current.values()),
     }
 
 
 def region_detail(collection: str, region_id: str, *, level: str, year: int, metric_id: str,
-                  aggregation: str, pkd: str = "", pkd_mode: str = "primary", min_companies: int = 1) -> dict:
+                  aggregation: str, pkd: str = "", pkd_mode: str = "primary", min_companies: int = 1,
+                  verification: str = "all") -> dict:
     payload = map_data(collection, level=level, year=year, metric_id=metric_id, aggregation=aggregation,
-                       pkd=pkd, pkd_mode=pkd_mode, min_companies=min_companies)
+                       pkd=pkd, pkd_mode=pkd_mode, min_companies=min_companies, verification=verification)
     region = next((item for item in payload["regions"] if item["region_id"] == region_id), None)
     if not region: raise KeyError(region_id)
     if region["insufficient_data"]:
         return {**payload, "region": region, "trend": [], "top_revenue": [], "top_metric": [], "suppressed": True}
     metric = METRICS[metric_id]
     region_col, _ = _region_columns(level)
-    where, params = _filters(collection, pkd, pkd_mode)
+    where, params = _filters(collection, pkd, pkd_mode, verification)
     with connect() as conn:
         select_metric = f'o."{metric["field"]}"'
         common = f"""FROM observation o JOIN company c ON c.collection_id=o.collection_id AND c.krs=o.krs
@@ -642,7 +718,7 @@ def region_detail(collection: str, region_id: str, *, level: str, year: int, met
             AND {select_metric} IS NOT NULL ORDER BY {select_metric} DESC LIMIT 8""", [*params, year, region_id])]
         trend = []
         for trend_year in range(year - 4, year + 1):
-            year_map, _ = _raw_regions(conn, collection, level, trend_year, metric, aggregation, pkd, pkd_mode)
+            year_map, _ = _raw_regions(conn, collection, level, trend_year, metric, aggregation, pkd, pkd_mode, verification)
             item = year_map.get(region_id)
             trend.append({"year": trend_year, "value": item["value"] if item and item["metric_company_count"] >= min_companies else None})
     return {**payload, "region": region, "trend": trend, "top_revenue": top_revenue, "top_metric": top_metric, "suppressed": False}

@@ -217,6 +217,7 @@ interface GeminiVerificationProps {
   companyName: string;
   localVerification: 'confirmed' | 'rejected' | null;
   onApplyVerification?: (status: 'confirmed' | 'rejected' | null) => void;
+  onGeminiVerification?: (status: 'confirmed' | 'rejected') => void;
   initialDbVerification?: any;
 }
 
@@ -226,6 +227,7 @@ export function GeminiVerification({
   companyName,
   localVerification,
   onApplyVerification,
+  onGeminiVerification,
   initialDbVerification,
 }: GeminiVerificationProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -318,9 +320,9 @@ export function GeminiVerification({
 
       // Automatically apply verdict to qualification!
       if (data.is_developer === true) {
-        onApplyVerification?.('confirmed');
+        onGeminiVerification?.('confirmed');
       } else if (data.is_developer === false) {
-        onApplyVerification?.('rejected');
+        onGeminiVerification?.('rejected');
       }
     } catch (err: any) {
       setError(err.message || 'Wystąpił błąd podczas weryfikacji w Gemini.');

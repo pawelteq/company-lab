@@ -22,7 +22,7 @@ from scipy.stats import norm
 
 from backend.local_profiles import available as local_database_available
 from backend.local_profiles import connect as local_connection
-from backend.local_profiles import decompress_json
+from backend.local_profiles import decompress_json, apply_verification_override
 from etl.config import ROOT
 
 SIGNIFICANCE_LEVEL = 0.10
@@ -56,18 +56,23 @@ def load_raw_dataset(min_revenue: float = 250000.0) -> tuple[str, pd.DataFrame]:
 
         cursor = conn.execute(
             """
-            SELECT krs, name, status, name_signal, profile_json_zlib
-            FROM profile_screening
-            WHERE collection_id = ?
-              AND (status = 'developer_candidate' OR name_signal = 1)
-              AND status != 'other_activity'
+            SELECT p.krs, p.name, p.status, p.name_signal, p.profile_json_zlib,
+                   v.status verification_status
+            FROM profile_screening p
+            LEFT JOIN company_verification v ON v.krs=p.krs
+            WHERE p.collection_id = ?
+              AND (
+                v.status = 'confirmed'
+                OR (v.status IS NULL AND (p.status = 'developer_candidate' OR p.name_signal = 1)
+                    AND p.status != 'other_activity')
+              )
             """,
             (collection_id,),
         )
 
         records = []
         for r in cursor.fetchall():
-            p = decompress_json(r["profile_json_zlib"])
+            p = apply_verification_override(decompress_json(r["profile_json_zlib"]), r["verification_status"])
             if p.get("provider_status") != "active" or p.get("is_currently_suspended"):
                 continue
 

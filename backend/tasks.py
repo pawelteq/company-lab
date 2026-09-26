@@ -58,7 +58,8 @@ def task_export_csv(collection: str, filters: dict) -> dict:
             """SELECT krs,name,city,region,status,primary_pkd,primary_pkd_description,
                       latest_period,latest_currency,latest_revenue_text AS revenue,
                       segment,name_signal,screening_reason,business_type,is_active,
-                      annual_period,annual_revenue,annual_profit,classification_json
+                      annual_period,annual_revenue,annual_profit,classification_json,
+                      (SELECT status FROM company_verification v WHERE v.krs=profile_screening.krs) verification_status
                FROM profile_screening WHERE """
             + " AND ".join(clauses)
             + " ORDER BY krs",
@@ -74,7 +75,7 @@ def task_export_csv(collection: str, filters: dict) -> dict:
         "Opis PKD", "Ostatni okres", "Waluta", "Przychód", "Segment",
         "Sygnał nazwy", "Uzasadnienie", "Nowa klasyfikacja", "Aktywna",
         "Pełny rok PLN", "Przychód roczny PLN", "Zysk roczny PLN",
-        "Reguły i dowody",
+        "Reguły i dowody", "Weryfikacja",
     ])
     for row in rows:
         writer.writerow([
@@ -83,7 +84,7 @@ def task_export_csv(collection: str, filters: dict) -> dict:
                 "primary_pkd_description", "latest_period", "latest_currency",
                 "revenue", "segment", "name_signal", "screening_reason",
                 "business_type", "is_active", "annual_period",
-                "annual_revenue", "annual_profit", "classification_json",
+                "annual_revenue", "annual_profit", "classification_json", "verification_status",
             )
         ])
 

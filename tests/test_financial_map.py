@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -46,6 +48,16 @@ def map_database(tmp_path, monkeypatch):
     source = tmp_path / "profiles.sqlite3"
     target = tmp_path / "financial_map.sqlite3"
     local_profiles.build_database(collection, source)
+    with closing(sqlite3.connect(source)) as connection:
+        connection.executemany(
+            """INSERT INTO company_verification
+               (krs,collection_id,status,source,updated_at) VALUES (?,?,?,?,?)""",
+            [
+                ("0000000002", COLLECTION, "confirmed", "user", "2026-09-26T12:00:00+00:00"),
+                ("0000000003", COLLECTION, "rejected", "gemini", "2026-09-26T12:00:00+00:00"),
+            ],
+        )
+        connection.commit()
     financial_map.build_index(source, target)
     monkeypatch.setenv("LOCAL_SQLITE_PATH", str(source))
     monkeypatch.setenv("FINANCIAL_MAP_SQLITE_PATH", str(target))
@@ -107,3 +119,27 @@ def test_ratio_filters_minimum_and_fixed_comparison(map_database):
     assert row["metrics"]["revenue_total"]["value"] == 10_200
     assert row["metrics"]["ebit_margin"]["value"] is None
     assert row["metrics"]["ebit_margin"]["company_count"] == 1
+
+
+def test_verification_filter_changes_map_calculations_immediately(map_database):
+    confirmed = financial_map.map_data(
+        COLLECTION, level="voivodeship", year=2025, metric_id="revenue_total",
+        aggregation="sum", min_companies=1, verification="confirmed",
+    )["regions"][0]
+    assert confirmed["value"] == 200
+    assert confirmed["metric_company_count"] == 1
+
+    unverified = financial_map.map_data(
+        COLLECTION, level="voivodeship", year=2025, metric_id="revenue_total",
+        aggregation="sum", min_companies=1, verification="unverified",
+    )["regions"][0]
+    assert unverified["value"] == 0
+    assert unverified["metric_company_count"] == 1
+
+    assert financial_map.set_verification_status("0000000001", "confirmed") == 1
+    updated = financial_map.map_data(
+        COLLECTION, level="voivodeship", year=2025, metric_id="revenue_total",
+        aggregation="sum", min_companies=1, verification="confirmed",
+    )["regions"][0]
+    assert updated["value"] == 200
+    assert updated["metric_company_count"] == 2

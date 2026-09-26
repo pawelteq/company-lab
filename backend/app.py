@@ -32,6 +32,13 @@ async def lifespan(app: FastAPI):
         logger.info("Redis cache aktywny.")
     else:
         logger.warning("Redis niedostępny — cache wyłączony, kolejka zadań niedostępna.")
+    try:
+        from backend.financial_map import sync_verifications
+        result = sync_verifications()
+        if result.get("available"):
+            logger.info("Mapa: zsynchronizowano %s zapisanych weryfikacji.", result["updated"])
+    except Exception as exc:
+        logger.warning("Nie udało się zsynchronizować weryfikacji z mapą: %s", exc)
     yield
     # Shutdown: nothing to clean up
 
@@ -351,6 +358,7 @@ def submit_export_csv(
     segment: str = "all",
     business_type: str = "all",
     activity: str = "all",
+    verification: str = "all",
     revenue_min: float | None = None,
     revenue_max: float | None = None,
     profit_min: float | None = None,
@@ -360,7 +368,7 @@ def submit_export_csv(
     filters = dict(
         q=q, status=status, segment=segment, city=city, region=region,
         county=county, municipality=municipality, business_type=business_type,
-        activity=activity, revenue_min=revenue_min, revenue_max=revenue_max,
+        activity=activity, verification=verification, revenue_min=revenue_min, revenue_max=revenue_max,
         profit_min=profit_min, profit_max=profit_max,
     )
     from backend.tasks import task_export_csv

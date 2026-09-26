@@ -50,6 +50,7 @@ def financial_map_data(
     min_companies: int = Query(5, ge=1, le=500),
     view: Literal["value", "change"] = "value",
     compare_year: int | None = Query(None, ge=1900, le=2200),
+    verification: Literal["all", "verified", "confirmed", "rejected", "unverified"] = "all",
 ):
     if metric not in financial_map.METRICS:
         raise HTTPException(422, "Nieznana metryka finansowa")
@@ -57,6 +58,7 @@ def financial_map_data(
         collection=str(collection), level=level, year=year, metric_id=metric,
         aggregation=aggregation, pkd=pkd, pkd_mode=pkd_mode,
         min_companies=min_companies, view=view, compare_year=compare_year,
+        verification=verification,
     )
     try:
         result, from_cache = cached_response(
@@ -84,12 +86,13 @@ def financial_map_region(
     pkd: str = Query("", max_length=20),
     pkd_mode: Literal["primary", "all"] = "primary",
     min_companies: int = Query(5, ge=1, le=500),
+    verification: Literal["all", "verified", "confirmed", "rejected", "unverified"] = "all",
 ):
     if metric not in financial_map.METRICS:
         raise HTTPException(422, "Nieznana metryka finansowa")
     params = dict(collection=str(collection), region_id=region_id, level=level, year=year,
                   metric_id=metric, aggregation=aggregation, pkd=pkd, pkd_mode=pkd_mode,
-                  min_companies=min_companies)
+                  min_companies=min_companies, verification=verification)
     try:
         result, from_cache = cached_response(
             "financial-map-region-v2", params,
@@ -116,10 +119,11 @@ def financial_map_comparison(
     pkd: str = Query("", max_length=20),
     pkd_mode: Literal["primary", "all"] = "primary",
     min_companies: int = Query(5, ge=1, le=500),
+    verification: Literal["all", "verified", "confirmed", "rejected", "unverified"] = "all",
 ):
     ids = [value.strip() for value in region_ids.split(",") if value.strip()][:5]
     params = dict(collection=str(collection), region_ids=ids, level=level, year=year, pkd=pkd,
-                  pkd_mode=pkd_mode, min_companies=min_companies)
+                  pkd_mode=pkd_mode, min_companies=min_companies, verification=verification)
     try:
         result, from_cache = cached_response(
             "financial-map-comparison-v2", params,

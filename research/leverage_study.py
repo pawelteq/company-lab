@@ -18,7 +18,7 @@ from statsmodels.stats.multitest import multipletests
 from backend.app import connection
 from backend.local_profiles import available as local_database_available
 from backend.local_profiles import connect as local_connection
-from backend.local_profiles import decompress_json
+from backend.local_profiles import decompress_json, apply_verification_override
 from etl.config import ROOT
 from etl.developer_screening import normalized
 
@@ -40,7 +40,7 @@ FIELDS = ['revenue_total', 'profit_net', 'ebit', 'equity', 'total_assets',
           'contract_deposits', 'contract_valuations', 'revenue_change_inventories']
 PROTOCOL = {
     'version': 'lagged-leverage-3-alpha-10', 'minimum_years': 5,
-    'selection': 'active, not suspended, description developer_candidate OR explicit housing/development name; contradictory other_activity excluded; latest usable annual PLN revenue >250000',
+    'selection': 'saved human/Gemini decisions override automatic labels; otherwise active, not suspended, description developer_candidate OR explicit housing/development name; contradictory other_activity excluded; latest usable annual PLN revenue >250000',
     'name_regex': NAME.pattern,
     'periods': 'standalone PLN, full calendar year, positive assets, balance within 2%; conflicting duplicate years excluded',
     'primary': 'two-year future annual average net profit / average assets; exposure current loans/assets; company and year fixed effects',
@@ -312,8 +312,15 @@ def load_current_panel():
         with local_connection() as conn:
             row = conn.execute('SELECT id FROM profile_collection ORDER BY created_at DESC,id DESC LIMIT 1').fetchone()
             collection = str(row['id'])
-            profiles = conn.execute('SELECT profile_json_zlib FROM profile_screening WHERE collection_id=? ORDER BY krs', (collection,))
-            panel = build(decompress_json(record['profile_json_zlib']) for record in profiles)
+            profiles = conn.execute('''SELECT p.profile_json_zlib,v.status verification_status
+                FROM profile_screening p LEFT JOIN company_verification v ON v.krs=p.krs
+                WHERE p.collection_id=? ORDER BY p.krs''', (collection,))
+            panel = build(
+                apply_verification_override(
+                    decompress_json(record['profile_json_zlib']), record['verification_status']
+                )
+                for record in profiles
+            )
     else:
         data_source = 'postgres'
         with connection() as conn:
