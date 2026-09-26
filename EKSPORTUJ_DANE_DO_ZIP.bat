@@ -23,7 +23,7 @@ if not exist "PACZKI_DANYCH" mkdir "PACZKI_DANYCH"
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%I"
 set "OUTPUT=PACZKI_DANYCH\company-lab-dane-%STAMP%.zip"
 
-echo Tworze prywatna paczke danych: %OUTPUT%
+echo Tworze prywatna paczke danych, opisow, oznaczen i analiz: %OUTPUT%
 echo Nie publikuj jej w publicznym repozytorium.
 ".venv\Scripts\python.exe" scripts\data_zip.py export "%OUTPUT%"
 if errorlevel 1 (

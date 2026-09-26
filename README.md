@@ -38,7 +38,7 @@ Na drugim komputerze:
 2. Przeciągnij otrzymany ZIP na `IMPORTUJ_DANE_Z_ZIP.bat`. Alternatywnie włóż jeden ZIP do katalogu `IMPORTUJ_TUTAJ` i kliknij plik importu.
 3. Po zakończeniu kliknij `URUCHOM_STRONE.bat`.
 
-Import sprawdza integralność i sumy kontrolne paczki. Jeśli na komputerze były już bazy, zapisuje ich kopię w `.local/backups` przed podmianą. Obsługiwane są także ZIP-y z surowym katalogiem `profiles`, które zostaną automatycznie przetworzone. Nie wysyłaj danych osobom bez uprawnień do ich używania.
+Paczka zawiera obie bazy aplikacji, pełne opisy profili, kwalifikacje firm i podgrupy, zapisane weryfikacje ręczne/AI, dane mapy, gotowe raporty widoczne w zakładkach badań oraz historię i pliki pomocnicze analiz. Import sprawdza integralność i sumy kontrolne paczki. Jeśli na komputerze były już dane, zapisuje ich kopię w `.local/backups` przed podmianą. Gotowe raporty są od razu kopiowane również do zbudowanej strony, więc nie trzeba ponownie wykonywać wielogodzinnych obliczeń. Obsługiwane są także ZIP-y z surowym katalogiem `profiles`, które zostaną automatycznie przetworzone. Nie wysyłaj danych osobom bez uprawnień do ich używania.
 
 ## Ręczne uruchomienie na Windows
 

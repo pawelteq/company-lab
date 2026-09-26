@@ -52,6 +52,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo Import zakonczony. Uruchom URUCHOM_STRONE.bat.
+echo Import zakonczony. Opisy, oznaczenia i gotowe analizy sa na miejscu.
+echo Uruchom URUCHOM_STRONE.bat.
 pause
 exit /b 0
