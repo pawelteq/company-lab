@@ -1,0 +1,17 @@
+{
+  "version": "exploratory-v1",
+  "maturity": "exploratory_association",
+  "year_from": 2018,
+  "year_to": 2024,
+  "horizon": 1,
+  "covariance": "clustered_by_company",
+  "models": ["pooled_year_effects", "firm_and_year_fe"],
+  "sensitivity": ["untrimmed", "winsor_01_99"],
+  "causal": false,
+  "studies": [
+    {"id":"R01","title":"Zadłużenie a przyszły wzrost przychodów","outcome":"revenue_growth","exposure":"liabilities_to_assets","controls":["current_ratio","roa","log_assets"],"quadratic":false,"primary_term":"liabilities_to_assets"},
+    {"id":"R02","title":"Nieliniowość zadłużenia a przyszłe ROA","outcome":"roa","exposure":"liabilities_to_assets","controls":["current_ratio","log_assets"],"quadratic":true,"primary_term":"liabilities_to_assets_squared"},
+    {"id":"R03","title":"Nieliniowość płynności a przyszła marża","outcome":"net_margin","exposure":"current_ratio","controls":["liabilities_to_assets","log_assets"],"quadratic":true,"primary_term":"current_ratio_squared"},
+    {"id":"R04","title":"Należności a przyszła zmiana marży","outcome":"delta_margin","exposure":"receivables_to_assets","controls":["liabilities_to_assets","current_ratio","log_assets"],"quadratic":false,"primary_term":"receivables_to_assets"}
+  ]
+}

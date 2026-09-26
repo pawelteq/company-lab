@@ -1,0 +1,39 @@
+.location-card { margin: 24px 0; border: 1px solid #dce5e1; border-radius: 18px; background: white; overflow: hidden; box-shadow: 0 4px 24px #173b3008; }
+.location-heading { padding: 24px 26px 18px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.location-heading .eyebrow { margin: 0 0 6px; font-size: 11px; }
+.location-heading h2 { margin: 0; font-size: 25px; }
+.location-heading p:not(.eyebrow) { margin: 5px 0 0; color: #526962; font-size: 14px; }
+.location-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; border-top: 1px solid #e2e9e6; }
+.location-map-area { position: relative; background: #f6f9f8; min-width: 0; }
+.location-map-area iframe { width: 100%; height: 540px; border: 0; display: block; }
+.location-map-controls { padding: 16px 18px 0; display: flex; align-items: center; gap: 12px; justify-content: space-between; flex-wrap: wrap; }
+.map-tabs { display: flex; border: 1px solid #d5e2dc; border-radius: 10px; background: #fff; padding: 3px; }
+.map-tabs button { border: 0; background: none; font-size: 13px; padding: 5px 12px; min-height: 36px; }
+.map-tabs button[aria-pressed="true"] { background: #205b4e; color: #fff; }
+.map-legend { font-size: 11px; display: flex; align-items: center; gap: 6px; color: #526962; }
+.map-legend i { width: 8px; height: 8px; border-radius: 50%; background: #00856d; display: inline-block; }
+.map-legend .muted-dot { background: #c4cdca; margin-left: 6px; }
+.map-selection { padding: 14px 20px; border-top: 1px solid #e1e9e5; display: flex; flex-direction: column; gap: 3px; }
+.map-selection span { font-size: 10px; color: #526962; letter-spacing: .12em; }
+.map-selection strong { font-size: 16px; }
+.location-list { padding: 20px 16px; border-left: 1px solid #e2e9e6; min-width: 0; }
+.location-type-tabs { display: flex; gap: 4px; background: #edf3f0; padding: 3px; border-radius: 8px; margin-bottom: 12px; }
+.location-type-tabs button { flex: 1; border: 0; background: transparent; padding: 6px 4px; font-size: 12px; font-weight: 600; color: #4a635a; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; text-align: center; }
+.location-type-tabs button:hover { color: #173b30; background: rgba(255,255,255,0.7); }
+.location-type-tabs button.active { background: #205b4e; color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.location-list label { font-weight: 650; font-size: 14px; display: block; margin-bottom: 8px; }
+.location-list input { width: 100%; min-width: 0; padding: 10px 12px; box-sizing: border-box; }
+.location-list-caption { font-size: 12px; color: #526962; margin: 12px 0; }
+.city-options { max-height: 500px; overflow-y: auto; padding-right: 4px; }
+.city-options button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; text-align: left; border: 1px solid transparent; background: transparent; margin: 2px 0; padding: 10px; }
+.city-options button:hover { background: #f0f5f2; }
+.city-options button.selected { background: #e3f2ed; border-color: #77b6a2; }
+.city-options strong { display: block; font-size: 14px; }
+.city-options small { display: block; font-size: 10px; color: #5b7269; }
+.city-options b { font-size: 13px; background: #eff3f1; border-radius: 8px; padding: 3px 7px; white-space: nowrap; }
+.location-footer { border-top: 1px solid #e2e9e6; padding: 14px 24px; }
+.location-footer p { margin: 0 0 4px; font-size: 12px; }
+.location-footer small { color: #64796e; font-size: 11px; }
+.map-state { position: absolute; inset: 75px 16px auto; background: #fff; padding: 14px; border: 1px solid #d5e2dc; border-radius: 10px; z-index: 1; }
+@media(max-width: 900px) { .location-layout { grid-template-columns: 1fr; } .location-list { border-left: 0; border-top: 1px solid #e2e9e6; } .city-options { max-height: 220px; } .location-map-area iframe { height: 450px; } }
+@media(max-width: 500px) { .location-heading { padding: 18px; flex-direction: column; align-items: start; gap: 12px; } .location-heading h2 { font-size: 21px; } .location-map-area iframe { height: 350px; } .location-map-controls { padding: 12px; } .location-footer { padding: 14px 18px; } }

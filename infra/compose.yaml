@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: company_lab
+      POSTGRES_USER: company_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - company_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U company_admin -d company_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  company_pgdata:

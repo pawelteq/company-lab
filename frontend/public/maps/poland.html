@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mapa lokalizacji firm</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f9f8;color:#24463c;font-family:"Segoe UI",Arial,sans-serif}
+svg{display:block;width:100%;height:calc(100vh - 30px);touch-action:manipulation;cursor:grab;user-select:none}
+svg.dragging,svg.dragging *{cursor:grabbing!important}
+.province{stroke:#b4c7bf;stroke-width:1.2;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .18s,stroke .18s}
+.province:hover,.province:focus{stroke:#105946;stroke-width:2.2;outline:none}
+.province.active{stroke:#007a64;stroke-width:2.5}
+.powiat-polygon{stroke:#6b8b7f;stroke-width:0.8;vector-effect:non-scaling-stroke;cursor:pointer;pointer-events:all;transition:fill .15s,stroke .15s,stroke-width .15s}
+.powiat-polygon:hover,.powiat-polygon:focus{stroke:#0284c7;stroke-width:2.2;fill:#e0f2fe!important;outline:none}
+.powiat-polygon.active{stroke:#0284c7;stroke-width:2.8;fill:#bae6fd!important}
+.gmina-polygon{stroke:#84a295;stroke-width:0.5;stroke-dasharray:2.5 1.5;vector-effect:non-scaling-stroke;cursor:pointer;pointer-events:all;transition:fill .15s,stroke .15s,stroke-width .15s}
+.gmina-polygon:hover,.gmina-polygon:focus{stroke:#0369a1;stroke-width:1.8;stroke-dasharray:none;fill:#e0f2fe!important;outline:none}
+.gmina-polygon.active{stroke:#0369a1;stroke-width:2.4;stroke-dasharray:none;fill:#bae6fd!important}
+.powiat-boundary{fill:transparent;stroke:#527568;stroke-width:0.9;stroke-opacity:0.7;vector-effect:non-scaling-stroke;pointer-events:all;transition:fill .15s,stroke-width .15s,stroke-opacity .15s;cursor:pointer}
+.powiat-boundary:hover{fill:rgba(2,132,199,0.15);stroke:#0284c7;stroke-width:2.2;stroke-opacity:1}
+.powiat-boundary.active{stroke:#0284c7;stroke-width:2.8;stroke-opacity:1;fill:rgba(2,132,199,0.25)}
+.gmina-boundary{fill:transparent;stroke:#759487;stroke-width:0.5;stroke-opacity:0.6;stroke-dasharray:2.5 1.5;vector-effect:non-scaling-stroke;pointer-events:all;transition:fill .15s,stroke-width .15s,stroke-opacity .15s;cursor:pointer}
+.gmina-boundary:hover{fill:rgba(3,105,161,0.15);stroke:#0369a1;stroke-width:1.6;stroke-opacity:1;stroke-dasharray:none}
+.gmina-boundary.active{stroke:#0369a1;stroke-width:2.2;stroke-opacity:1;stroke-dasharray:none;fill:rgba(3,105,161,0.25)}
+.dot{stroke:#fff;stroke-width:1.4;vector-effect:non-scaling-stroke;cursor:pointer;transition:transform .12s,fill .15s}
+.dot:hover,.dot:focus{stroke:#06261e;stroke-width:2.5;outline:none}
+.label{fill:#164034;pointer-events:none;font-weight:600;text-anchor:middle;paint-order:stroke;stroke:#ffffff;stroke-width:3.5px;stroke-linejoin:round}
+.city-label{fill:#0c382b;font-weight:700;pointer-events:none;paint-order:stroke;stroke:#ffffff;stroke-width:3.5px;stroke-linejoin:round}
+.selected-halo{fill:none;stroke:#00856d;stroke-width:2.5;vector-effect:non-scaling-stroke;pointer-events:none}
+.zoom{position:absolute;left:14px;bottom:34px;display:flex;align-items:center;gap:4px}
+.zoom button{min-width:38px;height:36px;border:1px solid #ceded5;border-radius:8px;background:white;color:#235847;cursor:pointer;font-size:13px;padding:0 10px;transition:background .15s,color .15s}
+.zoom button[aria-pressed="true"]{background:#205b4e;color:#fff;border-color:#205b4e}
+.zoom .sep{width:1px;height:24px;background:#d0dcd6;margin:0 4px}
+.tooltip{position:absolute;bottom:4px;left:14px;right:14px;pointer-events:none;font-size:12px;text-align:center;color:#45675a}
+.status{padding:40px;text-align:center;color:#526962}
+.financial-mode{background:#eceeef}
+.financial-mode .zoom{bottom:10px}
+.financial-mode .zoom .sep,.financial-mode #toggle-powiaty,.financial-mode #toggle-gminy{display:none}
+.financial-region{stroke:#fff;stroke-width:1;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .16s ease-out,stroke-width .16s ease-out}
+.financial-region:hover,.financial-region:focus{stroke:#202326;stroke-width:2.2;outline:none}
+.financial-region.active{stroke:#202326;stroke-width:3}
+.financial-region.insufficient{fill:#d9dcde}
+.financial-label{fill:#202326;pointer-events:none;text-anchor:middle;font-family:"Segoe UI",Arial,sans-serif;font-weight:650;paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round}
+.financial-label .region-name{font-size:.72em;text-transform:uppercase;letter-spacing:.04em}
+.financial-label .region-value{font-family:"Arial Narrow","Segoe UI",sans-serif;font-size:1.12em;font-weight:800}
+.financial-mode .tooltip{color:#4f565b;font-weight:500}
+</style></head><body><svg viewBox="0 0 760 720" role="group" aria-label="Polska: województwa, powiaty, gminy i miejscowości z firmami"></svg>
+<div class="tooltip" aria-live="polite">Przeciągnij: przesuwanie · Kółko: zoom · Kliknięcie: filtr · Przytrzymaj Ctrl: zaznacz kilka</div>
+<div class="zoom"><button id="out" aria-label="Oddal mapę">−</button><button id="in" aria-label="Przybliż mapę">+</button><button id="whole">Cała mapa</button><span class="sep"></span><button id="toggle-powiaty" aria-pressed="false" title="Włącz lub wyłącz granice powiatów">Powiaty</button><button id="toggle-gminy" aria-pressed="false" title="Włącz lub wyłącz granice gmin">Gminy</button></div>
+<script src="poland.js?v=fc7ce125265e"></script></body></html>
