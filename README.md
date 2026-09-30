@@ -14,6 +14,28 @@ Aplikacja do przeglądania firm, ich finansów i powiązań oraz badania zależn
 
 Technologia: React, TypeScript, Vite, FastAPI, Python, SQLite i Capacitor. PostgreSQL jest opcjonalny i służy starszemu pipeline'owi. Badania są eksploracyjne: zależność statystyczna nie oznacza przyczynowości.
 
+## Jak wygląda aplikacja
+
+Zrzuty pochodzą z działającej strony z lokalnie zaimportowanymi danymi (wrzesień 2026). Na świeżej instalacji liczby i wyniki będą zależeć od zaimportowanej paczki.
+
+### Ekran startowy
+
+![Ekran startowy z podsumowaniem bazy firm](docs/screenshots/start.jpg)
+
+### Katalog firm i weryfikacja
+
+![Filtry katalogu firm, w tym stan weryfikacji](docs/screenshots/katalog-filtry.jpg)
+
+![Lista firm z wynikami finansowymi i oznaczeniami weryfikacji](docs/screenshots/katalog-wyniki.jpg)
+
+### Finansowa mapa Polski
+
+![Mapa przychodów firm w województwach i ranking regionów](docs/screenshots/mapa-finansowa.jpg)
+
+### Badania
+
+![Widok badań zależności między długiem a wynikami firm](docs/screenshots/badania.jpg)
+
 ## Najprostsza instalacja na Windows
 
 Repozytorium zawiera samą aplikację — bez prywatnych danych firm. Po pobraniu projektu:
